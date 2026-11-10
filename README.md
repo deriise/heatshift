@@ -7,6 +7,10 @@ Home Assistant integration that shifts your heat pump to the cheapest hours of y
 
 *Nederlandse uitleg: zie [hieronder](#nederlands).*
 
+> ⚠️ **Work in progress.** HeatShift is still being tested and is not ready for use in your own installation. Settings and behaviour can change without notice.
+>
+> ⚠️ **In ontwikkeling.** HeatShift wordt nog getest en is niet geschikt voor gebruik in je eigen installatie. Instellingen en gedrag kunnen zonder aankondiging veranderen.
+
 > **Disclaimer.** Use of HeatShift is voluntary and at your own risk. HeatShift is provided "as is", without any warranty, under the [Apache License 2.0](LICENSE). The makers and the installer are not liable for damage, higher energy costs or loss of comfort. Steering stays off until you turn it on.
 
 ## What it does
