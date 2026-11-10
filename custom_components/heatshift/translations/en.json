@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up HeatShift",
+        "description": "HeatShift moves your heat pump to the cheapest hours of your dynamic energy contract.\n\nUse is voluntary and at your own risk. HeatShift is provided as is, without any warranty. The makers and the installer are not liable for damage, higher energy costs or loss of comfort. Steering stays off until you turn on the HeatShift switch.",
+        "data": {
+          "price_sensor": "Price sensor",
+          "offset_entity": "Heat pump offset (climate)",
+          "water_heater": "Hot water tank (water heater)",
+          "tank_sensor": "Tank temperature sensor",
+          "accept_disclaimer": "I have read this and accept it"
+        },
+        "data_description": {
+          "price_sensor": "Sensor with today's prices per quarter or hour, for example Frank Energie Prices today.",
+          "offset_entity": "The climate entity that sets the leaving water offset, for example Altherma Leaving Water Offset.",
+          "water_heater": "Optional. Needed for hot water planning.",
+          "tank_sensor": "Optional. If empty, the temperature of the water heater is used."
+        }
+      }
+    },
+    "error": {
+      "no_prices": "This sensor has no price list HeatShift can read.",
+      "must_accept": "You need to accept the terms to continue."
+    },
+    "abort": {
+      "already_configured": "HeatShift is already set up for this heat pump."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HeatShift settings",
+        "data": {
+          "expensive_threshold": "Expensive from (position in day range)",
+          "expensive_offset": "Offset when expensive",
+          "cheap_threshold": "Cheap up to (position in day range)",
+          "cheap_offset": "Offset when cheap",
+          "dhw_enabled": "Plan hot water in the cheapest block",
+          "dhw_window_start": "Hot water window start",
+          "dhw_window_end": "Hot water window end",
+          "dhw_block_minutes": "Hot water block length",
+          "dhw_reheat_below": "Heat hot water only below",
+          "morning_enabled": "Morning check",
+          "morning_time": "Morning check time",
+          "morning_below": "Morning check: heat below",
+          "morning_target": "Morning check: heat up to",
+          "morning_timeout": "Morning check: stop after",
+          "tank_minimum": "Safety minimum tank temperature"
+        },
+        "data_description": {
+          "expensive_threshold": "0% is the cheapest price of the day, 100% the most expensive. Above this value the expensive offset is used.",
+          "cheap_threshold": "Below this value the cheap offset is used. 0 turns it off.",
+          "tank_minimum": "Below this temperature HeatShift always heats the tank, whatever the price."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "steering": {
+        "name": "Steering"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Off",
+          "active": "Active",
+          "no_prices": "No prices",
+          "heating_off": "Heating off"
+        }
+      },
+      "planned_offset": {
+        "name": "Planned offset"
+      },
+      "hot_water_start": {
+        "name": "Hot water start"
+      }
+    }
+  }
+}

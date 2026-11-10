@@ -1,0 +1,147 @@
+"""Setup screen and settings for HeatShift."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    TimeSelector,
+)
+
+from .const import (
+    CONF_ACCEPT,
+    CONF_CHEAP_OFFSET,
+    CONF_CHEAP_THRESHOLD,
+    CONF_DHW_BLOCK_MINUTES,
+    CONF_DHW_ENABLED,
+    CONF_DHW_REHEAT_BELOW,
+    CONF_DHW_WINDOW_END,
+    CONF_DHW_WINDOW_START,
+    CONF_EXPENSIVE_OFFSET,
+    CONF_EXPENSIVE_THRESHOLD,
+    CONF_MORNING_BELOW,
+    CONF_MORNING_ENABLED,
+    CONF_MORNING_TARGET,
+    CONF_MORNING_TIME,
+    CONF_MORNING_TIMEOUT,
+    CONF_OFFSET_ENTITY,
+    CONF_PRICE_SENSOR,
+    CONF_TANK_MINIMUM,
+    CONF_TANK_SENSOR,
+    CONF_WATER_HEATER,
+    DEFAULT_OPTIONS,
+    DOMAIN,
+    OFFSET_MAX,
+    OFFSET_MIN,
+    TANK_TEMP_MAX,
+    TANK_TEMP_MIN,
+)
+from .planner import parse_prices
+
+
+def _number(minimum: float, maximum: float, step: float = 1, unit: str | None = None) -> NumberSelector:
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=step,
+            unit_of_measurement=unit,
+            mode=NumberSelectorMode.BOX,
+        )
+    )
+
+
+class HeatShiftConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Setup screen: pick the devices and accept the disclaimer."""
+
+    VERSION = 1
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle the setup screen."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            state = self.hass.states.get(user_input[CONF_PRICE_SENSOR])
+            if state is None or not parse_prices(state.attributes):
+                errors[CONF_PRICE_SENSOR] = "no_prices"
+            elif not user_input.get(CONF_ACCEPT):
+                errors["base"] = "must_accept"
+            else:
+                await self.async_set_unique_id(user_input[CONF_OFFSET_ENTITY])
+                self._abort_if_unique_id_configured()
+                data = {key: value for key, value in user_input.items() if key != CONF_ACCEPT}
+                return self.async_create_entry(
+                    title="HeatShift", data=data, options=dict(DEFAULT_OPTIONS)
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_PRICE_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_OFFSET_ENTITY): EntitySelector(
+                    EntitySelectorConfig(domain="climate")
+                ),
+                vol.Optional(CONF_WATER_HEATER): EntitySelector(
+                    EntitySelectorConfig(domain="water_heater")
+                ),
+                vol.Optional(CONF_TANK_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor", device_class="temperature")
+                ),
+                vol.Required(CONF_ACCEPT, default=False): BooleanSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input or {}),
+            errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> HeatShiftOptionsFlow:
+        """Return the settings flow."""
+        return HeatShiftOptionsFlow()
+
+
+class HeatShiftOptionsFlow(OptionsFlow):
+    """Settings: price thresholds, hot water and safety limits."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle the settings screen."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_EXPENSIVE_THRESHOLD): _number(50, 100, 5, "%"),
+                vol.Required(CONF_EXPENSIVE_OFFSET): _number(OFFSET_MIN, 0, 1, "°C"),
+                vol.Required(CONF_CHEAP_THRESHOLD): _number(0, 50, 5, "%"),
+                vol.Required(CONF_CHEAP_OFFSET): _number(0, OFFSET_MAX, 1, "°C"),
+                vol.Required(CONF_DHW_ENABLED): BooleanSelector(),
+                vol.Required(CONF_DHW_WINDOW_START): TimeSelector(),
+                vol.Required(CONF_DHW_WINDOW_END): TimeSelector(),
+                vol.Required(CONF_DHW_BLOCK_MINUTES): _number(15, 240, 15, "min"),
+                vol.Required(CONF_DHW_REHEAT_BELOW): _number(TANK_TEMP_MIN, TANK_TEMP_MAX, 1, "°C"),
+                vol.Required(CONF_MORNING_ENABLED): BooleanSelector(),
+                vol.Required(CONF_MORNING_TIME): TimeSelector(),
+                vol.Required(CONF_MORNING_BELOW): _number(TANK_TEMP_MIN, TANK_TEMP_MAX, 1, "°C"),
+                vol.Required(CONF_MORNING_TARGET): _number(TANK_TEMP_MIN, TANK_TEMP_MAX, 1, "°C"),
+                vol.Required(CONF_MORNING_TIMEOUT): _number(30, 240, 15, "min"),
+                vol.Required(CONF_TANK_MINIMUM): _number(TANK_TEMP_MIN, 45, 1, "°C"),
+            }
+        )
+        current = {**DEFAULT_OPTIONS, **self.config_entry.options}
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(schema, current),
+        )

@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HeatShift instellen",
+        "description": "HeatShift laat je warmtepomp draaien op de goedkoopste uren van je dynamische energiecontract.\n\nGebruik is vrijwillig en op eigen risico. HeatShift wordt geleverd zoals het is, zonder garantie. De makers en de installateur zijn niet aansprakelijk voor schade, hogere energiekosten of comfortverlies. De sturing staat uit tot je de HeatShift-schakelaar aanzet.",
+        "data": {
+          "price_sensor": "Prijssensor",
+          "offset_entity": "Offset warmtepomp (climate)",
+          "water_heater": "Boiler (water heater)",
+          "tank_sensor": "Sensor boilertemperatuur",
+          "accept_disclaimer": "Ik heb dit gelezen en ga akkoord"
+        },
+        "data_description": {
+          "price_sensor": "Sensor met de prijzen van vandaag per kwartier of uur, bijvoorbeeld Frank Energie Prices today.",
+          "offset_entity": "De climate-entiteit die de offset van de aanvoertemperatuur zet, bijvoorbeeld Altherma Leaving Water Offset.",
+          "water_heater": "Optioneel. Nodig voor de planning van warm water.",
+          "tank_sensor": "Optioneel. Leeg laten gebruikt de temperatuur van de boiler zelf."
+        }
+      }
+    },
+    "error": {
+      "no_prices": "Deze sensor heeft geen prijslijst die HeatShift kan lezen.",
+      "must_accept": "Je moet akkoord gaan om verder te gaan."
+    },
+    "abort": {
+      "already_configured": "HeatShift is al ingesteld voor deze warmtepomp."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HeatShift-instellingen",
+        "data": {
+          "expensive_threshold": "Duur vanaf (positie in dagbereik)",
+          "expensive_offset": "Offset bij dure prijs",
+          "cheap_threshold": "Goedkoop tot (positie in dagbereik)",
+          "cheap_offset": "Offset bij goedkope prijs",
+          "dhw_enabled": "Warm water in goedkoopste blok",
+          "dhw_window_start": "Begin venster warm water",
+          "dhw_window_end": "Einde venster warm water",
+          "dhw_block_minutes": "Lengte blok warm water",
+          "dhw_reheat_below": "Warm water alleen opwarmen onder",
+          "morning_enabled": "Ochtendcheck",
+          "morning_time": "Tijd ochtendcheck",
+          "morning_below": "Ochtendcheck: opwarmen onder",
+          "morning_target": "Ochtendcheck: opwarmen tot",
+          "morning_timeout": "Ochtendcheck: stoppen na",
+          "tank_minimum": "Veiligheidsminimum boiler"
+        },
+        "data_description": {
+          "expensive_threshold": "0% is de goedkoopste prijs van de dag, 100% de duurste. Daarboven geldt de offset bij dure prijs.",
+          "cheap_threshold": "Daaronder geldt de offset bij goedkope prijs. 0 zet dit uit.",
+          "tank_minimum": "Onder deze temperatuur warmt HeatShift de boiler altijd op, ongeacht de prijs."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "steering": {
+        "name": "Sturing"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Uit",
+          "active": "Actief",
+          "no_prices": "Geen prijzen",
+          "heating_off": "Verwarming uit"
+        }
+      },
+      "planned_offset": {
+        "name": "Geplande offset"
+      },
+      "hot_water_start": {
+        "name": "Start warm water"
+      }
+    }
+  }
+}
