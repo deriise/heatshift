@@ -155,6 +155,7 @@ class HeatShiftController:
         )
         self._read_prices()
         self._plan_dhw()
+        self._refresh_target()
         self._notify()
 
     async def async_stop(self) -> None:
@@ -255,6 +256,17 @@ class HeatShiftController:
             cheap,
         )
 
+    def _refresh_target(self) -> None:
+        """Compute the value for this quarter and the status, without sending it."""
+        self.target_offset = self._compute_target()
+        self.target_value = self._value_for(self.target_offset)
+        if not self.enabled:
+            self.status = STATUS_OFF
+        elif self.current_price is None:
+            self.status = STATUS_NO_PRICES
+        else:
+            self.status = STATUS_ACTIVE
+
     def plan(self) -> list[dict[str, Any]]:
         """Today's plan, for the sensor attributes and dashboard card."""
         expensive, cheap = self._changes()
@@ -298,15 +310,7 @@ class HeatShiftController:
 
     async def _async_tick(self) -> None:
         self._read_prices()
-        self.target_offset = self._compute_target()
-        self.target_value = self._value_for(self.target_offset)
-
-        if not self.enabled:
-            self.status = STATUS_OFF
-        elif self.current_price is None:
-            self.status = STATUS_NO_PRICES
-        else:
-            self.status = STATUS_ACTIVE
+        self._refresh_target()
 
         if self.enabled:
             await self._async_apply(self.target_value)
