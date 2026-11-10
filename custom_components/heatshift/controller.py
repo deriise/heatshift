@@ -20,6 +20,14 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_BASE_TEMP,
+    CONF_CONTROL_MODE,
+    CONF_THERMO_CHEAP_DELTA,
+    CONF_THERMO_EXPENSIVE_DELTA,
+    CONF_THERMO_MAX,
+    CONF_THERMO_MIN,
+    MODE_OFFSET,
+    MODE_THERMOSTAT,
     CONF_CHEAP_OFFSET,
     CONF_CHEAP_THRESHOLD,
     CONF_DHW_BLOCK_MINUTES,
@@ -59,11 +67,14 @@ from .planner import (
     parse_prices,
     price_position,
     slots_for_day,
+    thermostat_setpoint,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 HEATING_MODE = "heat"
+# HVAC modes in which a room thermostat may be shifted.
+THERMOSTAT_MODES = ("heat", "heat_cool", "auto")
 
 
 def _parse_time(value: str, fallback: str) -> time:
@@ -81,10 +92,13 @@ class HeatShiftController:
         self.water_heater: str | None = entry.data.get(CONF_WATER_HEATER)
         self.tank_sensor: str | None = entry.data.get(CONF_TANK_SENSOR)
         self.options: dict[str, Any] = {**DEFAULT_OPTIONS, **entry.options}
+        self.mode: str = entry.data.get(CONF_CONTROL_MODE, MODE_OFFSET)
 
         self.enabled = False
         self.slots: list[PriceSlot] = []
         self.target_offset = 0
+        # The value that is sent: an offset, or a room setpoint in thermostat mode.
+        self.target_value: float = self._neutral_value()
         self.position: float | None = None
         self.current_price: float | None = None
         self.dhw_block: Block | None = None
@@ -193,7 +207,36 @@ class HeatShiftController:
         state = self.hass.states.get(self.price_sensor)
         self.slots = parse_prices(state.attributes) if state else []
 
-    def _compute_target(self) -> int:
+    def _changes(self) -> tuple[float, float]:
+        """Change for expensive and for cheap prices, for the active mode."""
+        if self.mode == MODE_THERMOSTAT:
+            return (
+                float(self.options[CONF_THERMO_EXPENSIVE_DELTA]),
+                float(self.options[CONF_THERMO_CHEAP_DELTA]),
+            )
+        return (
+            int(self.options[CONF_EXPENSIVE_OFFSET]),
+            int(self.options[CONF_CHEAP_OFFSET]),
+        )
+
+    def _neutral_value(self) -> float:
+        """Value without any shift: offset 0 or the base temperature."""
+        if self.mode == MODE_THERMOSTAT:
+            return self._value_for(0)
+        return 0
+
+    def _value_for(self, change: float) -> float:
+        """Turn a change into the value to send, within the hard limits."""
+        if self.mode == MODE_THERMOSTAT:
+            return thermostat_setpoint(
+                float(self.options[CONF_BASE_TEMP]),
+                change,
+                float(self.options[CONF_THERMO_MIN]),
+                float(self.options[CONF_THERMO_MAX]),
+            )
+        return max(OFFSET_MIN, min(OFFSET_MAX, int(change)))
+
+    def _compute_target(self) -> float:
         now = dt_util.now()
         day_slots = slots_for_day(self.slots, now.date())
         slot = current_slot(day_slots, now)
@@ -203,26 +246,32 @@ class HeatShiftController:
             return 0
         self.current_price = slot.price
         self.position = price_position(day_slots, slot.price)
-        target = offset_for_position(
+        expensive, cheap = self._changes()
+        return offset_for_position(
             self.position,
             self.options[CONF_EXPENSIVE_THRESHOLD],
-            int(self.options[CONF_EXPENSIVE_OFFSET]),
+            expensive,
             self.options[CONF_CHEAP_THRESHOLD],
-            int(self.options[CONF_CHEAP_OFFSET]),
+            cheap,
         )
-        return max(OFFSET_MIN, min(OFFSET_MAX, target))
 
     def plan(self) -> list[dict[str, Any]]:
-        """Today's offset plan, for the sensor attributes and dashboard card."""
+        """Today's plan, for the sensor attributes and dashboard card."""
+        expensive, cheap = self._changes()
         return [
-            {"start": slot.start.isoformat(), "price": slot.price, "offset": offset}
-            for slot, offset in offset_plan(
+            {
+                "start": slot.start.isoformat(),
+                "price": slot.price,
+                "change": change,
+                "value": self._value_for(change),
+            }
+            for slot, change in offset_plan(
                 self.slots,
                 dt_util.now().date(),
                 self.options[CONF_EXPENSIVE_THRESHOLD],
-                int(self.options[CONF_EXPENSIVE_OFFSET]),
+                expensive,
                 self.options[CONF_CHEAP_THRESHOLD],
-                int(self.options[CONF_CHEAP_OFFSET]),
+                cheap,
             )
         ]
 
@@ -250,6 +299,7 @@ class HeatShiftController:
     async def _async_tick(self) -> None:
         self._read_prices()
         self.target_offset = self._compute_target()
+        self.target_value = self._value_for(self.target_offset)
 
         if not self.enabled:
             self.status = STATUS_OFF
@@ -259,23 +309,30 @@ class HeatShiftController:
             self.status = STATUS_ACTIVE
 
         if self.enabled:
-            await self._async_apply_offset(self.target_offset)
+            await self._async_apply(self.target_value)
             await self._async_tank_guard()
         self._notify()
 
-    async def _async_apply_offset(self, target: int) -> None:
+    def _may_steer(self, hvac_state: str) -> bool:
+        if self.mode == MODE_THERMOSTAT:
+            return hvac_state in THERMOSTAT_MODES
+        return hvac_state == HEATING_MODE
+
+    async def _async_apply(self, target: float, *, release: bool = False) -> None:
+        """Send the value to the climate entity if it differs."""
         state = self.hass.states.get(self.offset_entity)
         if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return
-        if state.state != HEATING_MODE:
+        if not self._may_steer(state.state):
             # Heating is off or cooling: leave the heat pump alone.
-            self.status = STATUS_HEATING_OFF
+            if not release:
+                self.status = STATUS_HEATING_OFF
             return
         try:
-            current = int(float(state.attributes.get(ATTR_TEMPERATURE, 0)))
+            current: float | None = float(state.attributes.get(ATTR_TEMPERATURE))
         except (TypeError, ValueError):
             current = None
-        if current == target:
+        if current is not None and abs(current - target) < 0.05:
             return
         await self._async_call(
             "climate",
@@ -397,21 +454,10 @@ class HeatShiftController:
             self._morning_restore_setpoint = None
 
     async def _async_release(self) -> None:
-        """Hand control back: offset 0 and the water heater on normal."""
+        """Hand control back: offset 0 or base temperature, water heater normal."""
         if self._morning_unsubs:
             await self._async_morning_finish()
-        state = self.hass.states.get(self.offset_entity)
-        if state and state.state == HEATING_MODE:
-            try:
-                current = int(float(state.attributes.get(ATTR_TEMPERATURE, 0)))
-            except (TypeError, ValueError):
-                current = None
-            if current != 0:
-                await self._async_call(
-                    "climate",
-                    "set_temperature",
-                    {ATTR_ENTITY_ID: self.offset_entity, ATTR_TEMPERATURE: 0},
-                )
+        await self._async_apply(self._neutral_value(), release=True)
         if self._boost_by_us and self._water_heater_mode() == MODE_BOOST:
             await self._async_set_mode(MODE_NORMAL)
         self._boost_by_us = False

@@ -121,14 +121,15 @@ def price_position(day_slots: list[PriceSlot], price: float) -> float | None:
 def offset_for_position(
     position: float | None,
     expensive_threshold: float,
-    expensive_offset: int,
+    expensive_offset: float,
     cheap_threshold: float,
-    cheap_offset: int,
-) -> int:
-    """Pick the offset for a price position.
+    cheap_offset: float,
+) -> float:
+    """Pick the change for a price position.
 
-    Thresholds are percentages (0 to 100). Without a usable position the
-    result is 0, so the heat pump runs on its own curve.
+    Used for both modes: an offset on the leaving water temperature, or a
+    change of the room setpoint. Thresholds are percentages (0 to 100).
+    Without a usable position the result is 0, so nothing is shifted.
     """
     if position is None:
         return 0
@@ -143,10 +144,10 @@ def offset_plan(
     slots: list[PriceSlot],
     day: date,
     expensive_threshold: float,
-    expensive_offset: int,
+    expensive_offset: float,
     cheap_threshold: float,
-    cheap_offset: int,
-) -> list[tuple[PriceSlot, int]]:
+    cheap_offset: float,
+) -> list[tuple[PriceSlot, float]]:
     """Offset for every slot of the day."""
     day_slots = slots_for_day(slots, day)
     return [
@@ -206,3 +207,25 @@ def cheapest_block(
             best = Block(start=first.start, end=block_end, average=average)
 
     return best
+
+
+def thermostat_setpoint(base: float, delta: float, minimum: float, maximum: float) -> float:
+    """Room setpoint for a change, rounded to 0.5 and kept within the limits."""
+    value = round((base + delta) * 2) / 2
+    return max(minimum, min(maximum, value))
+
+
+def entity_fits_mode(mode: str, min_temp: float | None, max_temp: float | None) -> bool:
+    """Check that a climate entity looks like an offset or a room thermostat.
+
+    An offset entity has a range around 0 (for example -10 to 10). A room
+    thermostat has a range that reaches normal room temperatures. This stops
+    a room thermostat from being set to an offset value like -2 °C.
+    """
+    if min_temp is None or max_temp is None:
+        return False
+    if mode == "offset":
+        return min_temp < 0 < max_temp and max_temp <= 15
+    if mode == "thermostat":
+        return min_temp >= 0 and max_temp >= 18
+    return False

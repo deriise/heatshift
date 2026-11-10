@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HeatShiftConfigEntry
-from .const import STATUSES
+from .const import MODE_THERMOSTAT, STATUSES
 from .entity import HeatShiftEntity
 
 
@@ -23,7 +23,10 @@ async def async_setup_entry(
     controller = entry.runtime_data
     entities: list[SensorEntity] = [
         StatusSensor(controller, "status"),
-        PlannedOffsetSensor(controller, "planned_offset"),
+        PlannedValueSensor(
+            controller,
+            "planned_setpoint" if controller.mode == MODE_THERMOSTAT else "planned_offset",
+        ),
     ]
     if controller.water_heater:
         entities.append(HotWaterStartSensor(controller, "hot_water_start"))
@@ -42,8 +45,8 @@ class StatusSensor(HeatShiftEntity, SensorEntity):
         return self.controller.status
 
 
-class PlannedOffsetSensor(HeatShiftEntity, SensorEntity):
-    """Offset for the current quarter, with today's plan as attribute."""
+class PlannedValueSensor(HeatShiftEntity, SensorEntity):
+    """Offset or room setpoint for the current quarter, with today's plan."""
 
     _attr_icon = "mdi:thermometer-lines"
     _attr_native_unit_of_measurement = "°C"
@@ -51,15 +54,17 @@ class PlannedOffsetSensor(HeatShiftEntity, SensorEntity):
     _unrecorded_attributes = frozenset({"plan"})
 
     @property
-    def native_value(self) -> int:
-        """Return the planned offset."""
-        return self.controller.target_offset
+    def native_value(self) -> float:
+        """Return the planned offset or setpoint."""
+        return self.controller.target_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the price position and today's plan."""
         position = self.controller.position
         return {
+            "mode": self.controller.mode,
+            "change": self.controller.target_offset,
             "current_price": self.controller.current_price,
             "price_position": round(position, 3) if position is not None else None,
             "plan": self.controller.plan(),

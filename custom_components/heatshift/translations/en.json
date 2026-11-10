@@ -6,22 +6,27 @@
         "description": "HeatShift moves your heat pump to the cheapest hours of your dynamic energy contract.\n\nUse is voluntary and at your own risk. HeatShift is provided as is, without any warranty. The makers and the installer are not liable for damage, higher energy costs or loss of comfort. Steering stays off until you turn on the HeatShift switch.",
         "data": {
           "price_sensor": "Price sensor",
-          "offset_entity": "Heat pump offset (climate)",
+          "control_mode": "Control method",
+          "offset_entity": "Heat pump control (climate)",
           "water_heater": "Hot water tank (water heater)",
           "tank_sensor": "Tank temperature sensor",
           "accept_disclaimer": "I have read this and accept it"
         },
         "data_description": {
           "price_sensor": "Sensor with today's prices per quarter or hour, for example Frank Energie Prices today.",
-          "offset_entity": "The climate entity that sets the leaving water offset, for example Altherma Leaving Water Offset.",
+          "offset_entity": "Offset: for example Altherma Leaving Water Offset. Room thermostat: the thermostat that controls the heat pump.",
           "water_heater": "Optional. Needed for hot water planning.",
-          "tank_sensor": "Optional. If empty, the temperature of the water heater is used."
+          "tank_sensor": "Optional. If empty, the temperature of the water heater is used.",
+          "control_mode": "Offset: shifts the leaving water temperature of the heat pump. Room thermostat: shifts the room setpoint by half degrees."
         }
       }
     },
     "error": {
       "no_prices": "This sensor has no price list HeatShift can read.",
-      "must_accept": "You need to accept the terms to continue."
+      "must_accept": "You need to accept the terms to continue.",
+      "not_offset_entity": "This entity does not look like an offset (range around 0). Pick the offset entity or choose Room thermostat.",
+      "not_thermostat_entity": "This entity does not look like a room thermostat. Pick the thermostat or choose Offset.",
+      "base_outside_limits": "The base temperature must lie between the lower and upper limit."
     },
     "abort": {
       "already_configured": "HeatShift is already set up for this heat pump."
@@ -46,14 +51,23 @@
           "morning_below": "Morning check: heat below",
           "morning_target": "Morning check: heat up to",
           "morning_timeout": "Morning check: stop after",
-          "tank_minimum": "Safety minimum tank temperature"
+          "tank_minimum": "Safety minimum tank temperature",
+          "base_temperature": "Base room temperature",
+          "thermostat_expensive_delta": "Change when expensive",
+          "thermostat_cheap_delta": "Change when cheap",
+          "thermostat_min": "Lowest room setpoint",
+          "thermostat_max": "Highest room setpoint"
         },
         "data_description": {
           "expensive_threshold": "0% is the cheapest price of the day, 100% the most expensive. Above this value the expensive offset is used.",
           "cheap_threshold": "Below this value the cheap offset is used. 0 turns it off.",
-          "tank_minimum": "Below this temperature HeatShift always heats the tank, whatever the price."
+          "tank_minimum": "Below this temperature HeatShift always heats the tank, whatever the price.",
+          "base_temperature": "The setpoint without price steering. HeatShift returns to this when it is switched off."
         }
       }
+    },
+    "error": {
+      "base_outside_limits": "The base temperature must lie between the lower and upper limit."
     }
   },
   "entity": {
@@ -77,6 +91,17 @@
       },
       "hot_water_start": {
         "name": "Hot water start"
+      },
+      "planned_setpoint": {
+        "name": "Planned setpoint"
+      }
+    }
+  },
+  "selector": {
+    "control_mode": {
+      "options": {
+        "offset": "Offset on leaving water temperature",
+        "thermostat": "Room thermostat"
       }
     }
   }

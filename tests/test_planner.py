@@ -11,10 +11,12 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components" / "heatsh
 from planner import (  # noqa: E402
     cheapest_block,
     current_slot,
+    entity_fits_mode,
     offset_for_position,
     offset_plan,
     parse_prices,
     price_position,
+    thermostat_setpoint,
 )
 
 TZ = timezone(timedelta(hours=1))
@@ -128,3 +130,21 @@ def test_cheapest_block_with_hourly_prices() -> None:
 
 def test_no_block_without_prices() -> None:
     assert cheapest_block([], DAY, time(10, 0), time(16, 0), 60) is None
+
+
+def test_thermostat_setpoint_rounds_and_limits() -> None:
+    assert thermostat_setpoint(20.5, -1, 17, 23) == 19.5
+    assert thermostat_setpoint(20.5, 0.5, 17, 23) == 21.0
+    assert thermostat_setpoint(20.3, 0, 17, 23) == 20.5
+    assert thermostat_setpoint(17.5, -1, 17, 23) == 17
+    assert thermostat_setpoint(22.5, 1, 17, 23) == 23
+
+
+def test_entity_fits_mode() -> None:
+    # Daikin Altherma offset entity: -10 to 10
+    assert entity_fits_mode("offset", -10, 10)
+    assert not entity_fits_mode("thermostat", -10, 10)
+    # Typical room thermostat: 5 to 30
+    assert entity_fits_mode("thermostat", 5, 30)
+    assert not entity_fits_mode("offset", 5, 30)
+    assert not entity_fits_mode("offset", None, 10)

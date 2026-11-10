@@ -6,22 +6,27 @@
         "description": "HeatShift laat je warmtepomp draaien op de goedkoopste uren van je dynamische energiecontract.\n\nGebruik is vrijwillig en op eigen risico. HeatShift wordt geleverd zoals het is, zonder garantie. De makers en de installateur zijn niet aansprakelijk voor schade, hogere energiekosten of comfortverlies. De sturing staat uit tot je de HeatShift-schakelaar aanzet.",
         "data": {
           "price_sensor": "Prijssensor",
-          "offset_entity": "Offset warmtepomp (climate)",
+          "control_mode": "Manier van sturen",
+          "offset_entity": "Sturing warmtepomp (climate)",
           "water_heater": "Boiler (water heater)",
           "tank_sensor": "Sensor boilertemperatuur",
           "accept_disclaimer": "Ik heb dit gelezen en ga akkoord"
         },
         "data_description": {
           "price_sensor": "Sensor met de prijzen van vandaag per kwartier of uur, bijvoorbeeld Frank Energie Prices today.",
-          "offset_entity": "De climate-entiteit die de offset van de aanvoertemperatuur zet, bijvoorbeeld Altherma Leaving Water Offset.",
+          "offset_entity": "Offset: bijvoorbeeld Altherma Leaving Water Offset. Kamerthermostaat: de thermostaat die de warmtepomp regelt.",
           "water_heater": "Optioneel. Nodig voor de planning van warm water.",
-          "tank_sensor": "Optioneel. Leeg laten gebruikt de temperatuur van de boiler zelf."
+          "tank_sensor": "Optioneel. Leeg laten gebruikt de temperatuur van de boiler zelf.",
+          "control_mode": "Offset: verschuift de aanvoertemperatuur van de warmtepomp. Kamerthermostaat: verschuift het kamersetpoint met halve graden."
         }
       }
     },
     "error": {
       "no_prices": "Deze sensor heeft geen prijslijst die HeatShift kan lezen.",
-      "must_accept": "Je moet akkoord gaan om verder te gaan."
+      "must_accept": "Je moet akkoord gaan om verder te gaan.",
+      "not_offset_entity": "Deze entiteit lijkt geen offset (bereik rond 0). Kies de offset-entiteit of kies Kamerthermostaat.",
+      "not_thermostat_entity": "Deze entiteit lijkt geen kamerthermostaat. Kies de thermostaat of kies Offset.",
+      "base_outside_limits": "De basistemperatuur moet tussen de onder- en bovengrens liggen."
     },
     "abort": {
       "already_configured": "HeatShift is al ingesteld voor deze warmtepomp."
@@ -46,14 +51,23 @@
           "morning_below": "Ochtendcheck: opwarmen onder",
           "morning_target": "Ochtendcheck: opwarmen tot",
           "morning_timeout": "Ochtendcheck: stoppen na",
-          "tank_minimum": "Veiligheidsminimum boiler"
+          "tank_minimum": "Veiligheidsminimum boiler",
+          "base_temperature": "Basis kamertemperatuur",
+          "thermostat_expensive_delta": "Verandering bij dure prijs",
+          "thermostat_cheap_delta": "Verandering bij goedkope prijs",
+          "thermostat_min": "Laagste kamersetpoint",
+          "thermostat_max": "Hoogste kamersetpoint"
         },
         "data_description": {
           "expensive_threshold": "0% is de goedkoopste prijs van de dag, 100% de duurste. Daarboven geldt de offset bij dure prijs.",
           "cheap_threshold": "Daaronder geldt de offset bij goedkope prijs. 0 zet dit uit.",
-          "tank_minimum": "Onder deze temperatuur warmt HeatShift de boiler altijd op, ongeacht de prijs."
+          "tank_minimum": "Onder deze temperatuur warmt HeatShift de boiler altijd op, ongeacht de prijs.",
+          "base_temperature": "Het setpoint zonder prijssturing. HeatShift zet de thermostaat hierop terug bij uitzetten."
         }
       }
+    },
+    "error": {
+      "base_outside_limits": "De basistemperatuur moet tussen de onder- en bovengrens liggen."
     }
   },
   "entity": {
@@ -77,6 +91,17 @@
       },
       "hot_water_start": {
         "name": "Start warm water"
+      },
+      "planned_setpoint": {
+        "name": "Gepland setpoint"
+      }
+    }
+  },
+  "selector": {
+    "control_mode": {
+      "options": {
+        "offset": "Offset op aanvoertemperatuur",
+        "thermostat": "Kamerthermostaat"
       }
     }
   }

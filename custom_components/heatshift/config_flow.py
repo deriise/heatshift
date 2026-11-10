@@ -15,11 +15,27 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TimeSelector,
 )
 
 from .const import (
     CONF_ACCEPT,
+    CONF_BASE_TEMP,
+    CONF_CONTROL_MODE,
+    CONF_THERMO_CHEAP_DELTA,
+    CONF_THERMO_EXPENSIVE_DELTA,
+    CONF_THERMO_MAX,
+    CONF_THERMO_MIN,
+    CONTROL_MODES,
+    DELTA_MAX,
+    DELTA_MIN,
+    MODE_OFFSET,
+    MODE_THERMOSTAT,
+    ROOM_TEMP_MAX,
+    ROOM_TEMP_MIN,
     CONF_CHEAP_OFFSET,
     CONF_CHEAP_THRESHOLD,
     CONF_DHW_BLOCK_MINUTES,
@@ -46,7 +62,7 @@ from .const import (
     TANK_TEMP_MAX,
     TANK_TEMP_MIN,
 )
-from .planner import parse_prices
+from .planner import entity_fits_mode, parse_prices
 
 
 def _number(minimum: float, maximum: float, step: float = 1, unit: str | None = None) -> NumberSelector:
@@ -71,22 +87,39 @@ class HeatShiftConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             state = self.hass.states.get(user_input[CONF_PRICE_SENSOR])
+            climate = self.hass.states.get(user_input[CONF_OFFSET_ENTITY])
+            mode = user_input[CONF_CONTROL_MODE]
             if state is None or not parse_prices(state.attributes):
                 errors[CONF_PRICE_SENSOR] = "no_prices"
+            elif climate is None or not entity_fits_mode(
+                mode, climate.attributes.get("min_temp"), climate.attributes.get("max_temp")
+            ):
+                errors[CONF_OFFSET_ENTITY] = f"not_{mode}_entity"
             elif not user_input.get(CONF_ACCEPT):
                 errors["base"] = "must_accept"
             else:
                 await self.async_set_unique_id(user_input[CONF_OFFSET_ENTITY])
                 self._abort_if_unique_id_configured()
                 data = {key: value for key, value in user_input.items() if key != CONF_ACCEPT}
-                return self.async_create_entry(
-                    title="HeatShift", data=data, options=dict(DEFAULT_OPTIONS)
-                )
+                options = dict(DEFAULT_OPTIONS)
+                if mode == MODE_THERMOSTAT:
+                    # Start from the setpoint the thermostat has now.
+                    current = climate.attributes.get("temperature")
+                    if isinstance(current, (int, float)) and ROOM_TEMP_MIN <= current <= ROOM_TEMP_MAX:
+                        options[CONF_BASE_TEMP] = float(current)
+                return self.async_create_entry(title="HeatShift", data=data, options=options)
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_PRICE_SENSOR): EntitySelector(
                     EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_CONTROL_MODE, default=MODE_OFFSET): SelectSelector(
+                    SelectSelectorConfig(
+                        options=CONTROL_MODES,
+                        mode=SelectSelectorMode.LIST,
+                        translation_key=CONF_CONTROL_MODE,
+                    )
                 ),
                 vol.Required(CONF_OFFSET_ENTITY): EntitySelector(
                     EntitySelectorConfig(domain="climate")
@@ -118,15 +151,41 @@ class HeatShiftOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the settings screen."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            low = user_input.get(CONF_THERMO_MIN)
+            high = user_input.get(CONF_THERMO_MAX)
+            base = user_input.get(CONF_BASE_TEMP)
+            if low is not None and high is not None and not low <= base <= high:
+                errors["base"] = "base_outside_limits"
+            else:
+                # Keep settings of the other mode, so switching back loses nothing.
+                return self.async_create_entry(data={**self.config_entry.options, **user_input})
 
+        fields: dict[Any, Any] = {
+            vol.Required(CONF_EXPENSIVE_THRESHOLD): _number(50, 100, 5, "%"),
+            vol.Required(CONF_CHEAP_THRESHOLD): _number(0, 50, 5, "%"),
+        }
+        if self.config_entry.data.get(CONF_CONTROL_MODE, MODE_OFFSET) == MODE_THERMOSTAT:
+            fields.update(
+                {
+                    vol.Required(CONF_BASE_TEMP): _number(ROOM_TEMP_MIN, ROOM_TEMP_MAX, 0.5, "°C"),
+                    vol.Required(CONF_THERMO_EXPENSIVE_DELTA): _number(DELTA_MIN, 0, 0.5, "°C"),
+                    vol.Required(CONF_THERMO_CHEAP_DELTA): _number(0, DELTA_MAX, 0.5, "°C"),
+                    vol.Required(CONF_THERMO_MIN): _number(ROOM_TEMP_MIN, ROOM_TEMP_MAX, 0.5, "°C"),
+                    vol.Required(CONF_THERMO_MAX): _number(ROOM_TEMP_MIN, ROOM_TEMP_MAX, 0.5, "°C"),
+                }
+            )
+        else:
+            fields.update(
+                {
+                    vol.Required(CONF_EXPENSIVE_OFFSET): _number(OFFSET_MIN, 0, 1, "°C"),
+                    vol.Required(CONF_CHEAP_OFFSET): _number(0, OFFSET_MAX, 1, "°C"),
+                }
+            )
         schema = vol.Schema(
             {
-                vol.Required(CONF_EXPENSIVE_THRESHOLD): _number(50, 100, 5, "%"),
-                vol.Required(CONF_EXPENSIVE_OFFSET): _number(OFFSET_MIN, 0, 1, "°C"),
-                vol.Required(CONF_CHEAP_THRESHOLD): _number(0, 50, 5, "%"),
-                vol.Required(CONF_CHEAP_OFFSET): _number(0, OFFSET_MAX, 1, "°C"),
+                **fields,
                 vol.Required(CONF_DHW_ENABLED): BooleanSelector(),
                 vol.Required(CONF_DHW_WINDOW_START): TimeSelector(),
                 vol.Required(CONF_DHW_WINDOW_END): TimeSelector(),
@@ -143,5 +202,6 @@ class HeatShiftOptionsFlow(OptionsFlow):
         current = {**DEFAULT_OPTIONS, **self.config_entry.options}
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(schema, current),
+            data_schema=self.add_suggested_values_to_schema(schema, user_input or current),
+            errors=errors,
         )
