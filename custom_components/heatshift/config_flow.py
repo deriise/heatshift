@@ -22,6 +22,10 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_MARGIN,
+    CONF_MIN_SPREAD,
+    CONF_REF_DAYS,
+    CONF_START_PRICE,
     CONF_COP_A2,
     CONF_COP_A7,
     CONF_COP_SOURCE,
@@ -178,6 +182,10 @@ class HeatShiftOptionsFlow(OptionsFlow):
         fields: dict[Any, Any] = {
             vol.Required(CONF_EXPENSIVE_THRESHOLD): _number(50, 100, 5, "%"),
             vol.Required(CONF_CHEAP_THRESHOLD): _number(0, 50, 5, "%"),
+            vol.Required(CONF_MARGIN): _number(0, 100, 5, "%"),
+            vol.Required(CONF_MIN_SPREAD): _number(0, 100, 5, "%"),
+            vol.Required(CONF_REF_DAYS): _number(3, 30, 1, "d"),
+            vol.Required(CONF_START_PRICE): _number(0, 2, 0.01, "€/kWh"),
         }
         if self.config_entry.data.get(CONF_CONTROL_MODE, MODE_OFFSET) == MODE_THERMOSTAT:
             fields.update(

@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HeatShiftConfigEntry
 from .const import MODE_THERMOSTAT, STATUSES
+from .planner import REASONS
 from .entity import HeatShiftEntity
 
 
@@ -28,6 +29,7 @@ async def async_setup_entry(
             "planned_setpoint" if controller.mode == MODE_THERMOSTAT else "planned_offset",
         ),
     ]
+    entities.append(ReasonSensor(controller, "reason"))
     entities.append(CopSensor(controller, "cop_now"))
     entities.append(HeatCostSensor(controller, "heat_cost_now"))
     if controller.water_heater:
@@ -139,3 +141,32 @@ class HeatCostSensor(HeatShiftEntity, SensorEntity):
         """Return the heat cost."""
         cost = self.controller.heat_cost_now
         return round(cost, 4) if cost is not None else None
+
+
+class ReasonSensor(HeatShiftEntity, SensorEntity):
+    """Why HeatShift picks the current change, in plain words."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = REASONS
+    _attr_icon = "mdi:comment-question-outline"
+
+    @property
+    def native_value(self) -> str:
+        """Return the reason code (translated in the UI)."""
+        return self.controller.reason
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the numbers behind the reason."""
+        c = self.controller
+        pct = lambda value: round(value * 100) if value is not None else None
+        return {
+            "change": c.target_offset,
+            "heat_cost": round(c.heat_cost_now, 4) if c.heat_cost_now is not None else None,
+            "reference_heat_cost": round(c.reference, 4) if c.reference else None,
+            "reference_source": c.reference_source,
+            "vs_reference_percent": pct(c.vs_reference),
+            "day_spread_percent": pct(c.spread),
+            "position_percent": pct(c.position),
+            "history_days": len(c.daily),
+        }

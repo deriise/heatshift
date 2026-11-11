@@ -56,13 +56,21 @@
           "thermostat_expensive_delta": "Change when expensive",
           "thermostat_cheap_delta": "Change when cheap",
           "thermostat_min": "Lowest room setpoint",
-          "thermostat_max": "Highest room setpoint"
+          "thermostat_max": "Highest room setpoint",
+          "reference_margin": "Difference from normal before shifting",
+          "min_spread": "Minimum price difference within the day",
+          "reference_days": "Days for the normal price",
+          "start_price": "Start value normal electricity price"
         },
         "data_description": {
           "expensive_threshold": "0% is the cheapest price of the day, 100% the most expensive. Above this value the expensive offset is used.",
           "cheap_threshold": "Below this value the cheap offset is used. 0 turns it off.",
           "tank_minimum": "Below this temperature HeatShift always heats the tank, whatever the price.",
-          "base_temperature": "The setpoint without price steering. HeatShift returns to this when it is switched off."
+          "base_temperature": "The setpoint without price steering. HeatShift returns to this when it is switched off.",
+          "reference_margin": "Only lower when heat costs at least this much more than normal, only raise when at least this much less.",
+          "min_spread": "Below this difference between the cheapest and most expensive moment of the day, HeatShift does not shift at all.",
+          "reference_days": "Normal is the average heat cost over this many past days.",
+          "start_price": "Used until there are three days of history. Default: CBS average for dynamic contracts, September 2026."
         }
       },
       "cop": {
@@ -129,6 +137,18 @@
       },
       "heat_cost_now": {
         "name": "Heat cost now"
+      },
+      "reason": {
+        "name": "Reason",
+        "state": {
+          "expensive": "Expensive moment: heat less",
+          "cheap": "Cheap moment: heat more",
+          "peak_not_expensive": "Expensive part of the day, but not more expensive than normal",
+          "dip_not_cheap": "Cheap part of the day, but not cheaper than normal",
+          "small_spread": "Little price difference today",
+          "normal": "Normal price",
+          "no_prices": "No prices"
+        }
       }
     }
   },

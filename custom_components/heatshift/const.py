@@ -53,6 +53,11 @@ CONF_SUPPLY_SENSOR: Final = "supply_sensor"
 CONF_RETURN_SENSOR: Final = "return_sensor"
 CONF_POWER_SENSOR: Final = "power_sensor"
 
+CONF_MARGIN: Final = "reference_margin"
+CONF_MIN_SPREAD: Final = "min_spread"
+CONF_REF_DAYS: Final = "reference_days"
+CONF_START_PRICE: Final = "start_price"
+
 COP_ESTIMATE: Final = "estimate"
 COP_MEASURED: Final = "measured"
 COP_SOURCES: Final = [COP_ESTIMATE, COP_MEASURED]
@@ -83,6 +88,11 @@ DEFAULT_OPTIONS: Final[dict] = {
     CONF_COP_A7: 0,
     CONF_COP_A2: 0,
     CONF_COP_SOURCE: COP_ESTIMATE,
+    CONF_MARGIN: 20,
+    CONF_MIN_SPREAD: 20,
+    CONF_REF_DAYS: 7,
+    # CBS average all-in price for dynamic contracts, September 2026.
+    CONF_START_PRICE: 0.32,
 }
 
 # Hard safety limits, also used as selector bounds.

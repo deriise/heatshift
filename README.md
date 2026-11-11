@@ -21,6 +21,8 @@ Home Assistant integration that shifts your heat pump to the cheapest hours of y
 - **Hot water:** every night it finds the cheapest block (default 1 hour between 10:00 and 16:00) and heats the tank in that block if it is below a threshold.
 - **Morning check:** at a set time (default 05:00) it heats the tank if it is too cold for the morning showers, then sets everything back.
 - **Heat cost, not price:** HeatShift plans on what a kWh of heat costs: price divided by the COP. The COP depends on the outdoor temperature from the weather forecast, so a warmer afternoon can beat a cheaper night. The COP is estimated (from two datasheet points, or physics) or measured from flow, supply and return temperature and power, for example via ESPAltherma. With measurements HeatShift learns a correction per degree outdoor temperature.
+- **Only when it pays off:** HeatShift only shifts when the day has enough price difference (default 20%) and a moment is clearly more (or less) expensive than normal (default 20%). Normal is your average heat cost over the last 7 days; until there is history it starts from the CBS average for dynamic contracts. On a day that is cheap all day, HeatShift does not lower the heating.
+- **Explains itself:** a Reason sensor tells why HeatShift lowers, raises or does nothing right now, and the daily plan holds the reason per quarter.
 - **Safety:** fixed limits on the offset, a minimum tank temperature below which it always heats, and when steering is off, stopped or without prices the offset goes back to 0.
 
 ## Supported
@@ -68,6 +70,8 @@ HeatShift laat je warmtepomp draaien op de goedkoopste uren van je dynamische en
 - **Warm water:** elke nacht zoekt HeatShift het goedkoopste blok (standaard 1 uur tussen 10:00 en 16:00) en warmt de boiler dan op als die onder een drempel zit.
 - **Ochtendcheck:** op een vast tijdstip (standaard 05:00) warmt HeatShift de boiler op als die te koud is voor het douchen, en zet daarna alles terug.
 - **Warmtekosten, niet de prijs:** HeatShift plant op wat een kWh warmte kost: de prijs gedeeld door de COP. De COP hangt af van de buitentemperatuur uit de weersverwachting, dus een warmere middag kan voordeliger zijn dan een goedkopere nacht. De COP wordt geschat (uit twee punten van het datablad, of natuurkundig) of gemeten met flow, aanvoer- en retourtemperatuur en vermogen, bijvoorbeeld via ESPAltherma. Met metingen leert HeatShift een correctie per graad buitentemperatuur.
+- **Alleen als het loont:** HeatShift schuift alleen als er op een dag genoeg prijsverschil is (standaard 20%) en een moment duidelijk duurder (of goedkoper) is dan normaal (standaard 20%). Normaal is je gemiddelde warmteprijs over de afgelopen 7 dagen; zolang er nog geen geschiedenis is, start HeatShift met het CBS-gemiddelde voor dynamische contracten. Op een dag die de hele dag goedkoop is, verlaagt HeatShift de verwarming niet.
+- **Legt zichzelf uit:** de sensor Reden vertelt waarom HeatShift nu verlaagt, verhoogt of niets doet, en de dagplanning bevat de reden per kwartier.
 - **Veiligheid:** vaste grenzen voor de offset, een minimale boilertemperatuur waaronder altijd wordt opgewarmd, en bij uitzetten, stoppen of zonder prijzen gaat de offset terug naar 0.
 
 ### Installeren

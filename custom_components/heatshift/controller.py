@@ -22,6 +22,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_MARGIN,
+    CONF_MIN_SPREAD,
+    CONF_REF_DAYS,
+    CONF_START_PRICE,
     CONF_COP_A2,
     CONF_COP_A7,
     CONF_COP_SOURCE,
@@ -77,10 +81,11 @@ from .planner import (
     Block,
     PriceSlot,
     cheapest_block,
-    offset_for_position,
-    offset_plan,
+    REASON_NO_PRICES,
+    day_spread,
+    decide,
+    reference_from_history,
     parse_prices,
-    price_position,
     thermostat_setpoint,
 )
 
@@ -138,6 +143,14 @@ class HeatShiftController:
         self.cop_now: float | None = None
         self.heat_cost_now: float | None = None
         self.live_cop: float | None = None
+
+        # Why HeatShift picks the current change, and what "normal" is.
+        self.daily: dict[str, float] = {}
+        self.reason: str = REASON_NO_PRICES
+        self.vs_reference: float | None = None
+        self.spread: float | None = None
+        self.reference: float | None = None
+        self.reference_source: str | None = None
         self._store: Store[dict[str, Any]] = Store(
             hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}.cop"
         )
@@ -159,7 +172,12 @@ class HeatShiftController:
 
     async def async_start(self) -> None:
         """Subscribe to time and state events."""
-        self.learned = LearnedCorrection.from_dict(await self._store.async_load())
+        stored = await self._store.async_load() or {}
+        if "learned" in stored or "daily" in stored:
+            self.learned = LearnedCorrection.from_dict(stored.get("learned"))
+            self.daily = {str(k): float(v) for k, v in (stored.get("daily") or {}).items()}
+        else:
+            self.learned = LearnedCorrection.from_dict(stored)
         await self._async_update_forecast()
         self._listeners.append(
             async_track_time_change(self.hass, self._handle_hourly, minute=2, second=0)
@@ -206,8 +224,7 @@ class HeatShiftController:
         if self._dhw_unsub:
             self._dhw_unsub()
             self._dhw_unsub = None
-        if self.measuring:
-            await self._store.async_save(self.learned.to_dict())
+        await self._store.async_save(self._store_data())
         if self.enabled:
             await self._async_release()
 
@@ -355,6 +372,56 @@ class HeatShiftController:
             )
         return result
 
+    def _store_data(self) -> dict[str, Any]:
+        # Keep 30 days of daily averages.
+        keep = dict(sorted(self.daily.items())[-30:])
+        self.daily = keep
+        return {"learned": self.learned.to_dict(), "daily": keep}
+
+    def _reference(self, cops: list[float | None]) -> float:
+        """The user's normal heat cost: recent history, or a start value."""
+        today = dt_util.now().date()
+        history = reference_from_history(self.daily, today, int(self.options[CONF_REF_DAYS]))
+        if history is not None:
+            self.reference_source = "history"
+            return history
+        known = [cop for cop in cops if cop]
+        average_cop = sum(known) / len(known) if known else 1.0
+        self.reference_source = "start"
+        return float(self.options[CONF_START_PRICE]) / average_cop
+
+    def _decide_today(self) -> tuple[list[tuple[PriceSlot, float | None, PriceSlot]], list]:
+        """Decisions for every quarter of today."""
+        today = dt_util.now().date()
+        costs = [
+            item
+            for item in self._cost_slots(float(self.options[CONF_HEATING_LWT]))
+            if item[0].start.date() == today
+        ]
+        if not costs:
+            return [], []
+        day_costs = [item[2].price for item in costs]
+        self.daily[today.isoformat()] = sum(day_costs) / len(day_costs)
+        reference = self._reference([item[1] for item in costs])
+        self.reference = reference
+        self.spread = day_spread(day_costs)
+        expensive, cheap = self._changes()
+        decisions = [
+            decide(
+                cost,
+                day_costs,
+                reference,
+                self.options[CONF_EXPENSIVE_THRESHOLD],
+                expensive,
+                self.options[CONF_CHEAP_THRESHOLD],
+                cheap,
+                float(self.options[CONF_MARGIN]),
+                float(self.options[CONF_MIN_SPREAD]),
+            )
+            for cost in day_costs
+        ]
+        return costs, decisions
+
     def _sample_cop(self) -> None:
         """Add one minute of measurements to the learned COP curve."""
         outdoor, humidity = self._current_weather()
@@ -370,7 +437,7 @@ class HeatShiftController:
         if self.learned.add_sample(
             self.cop_model, outdoor, humidity, supply, return_, flow, power, 1 / 60
         ):
-            self._store.async_delay_save(self.learned.to_dict, 600)
+            self._store.async_delay_save(self._store_data, 600)
 
     def _flow_l_per_min(self) -> float | None:
         entity_id = self.options.get(CONF_FLOW_SENSOR)
@@ -431,8 +498,7 @@ class HeatShiftController:
         now = dt_util.now()
         lwt = float(self.options[CONF_HEATING_LWT])
         self.cop_now = self._cop_at(now, lwt)
-        costs = [item for item in self._cost_slots(lwt) if item[0].start.date() == now.date()]
-        day_costs = [item[2] for item in costs]
+        costs, decisions = self._decide_today()
         index = next(
             (i for i, item in enumerate(costs) if item[0].start <= now < item[0].end), None
         )
@@ -440,18 +506,18 @@ class HeatShiftController:
             self.current_price = None
             self.heat_cost_now = None
             self.position = None
+            self.vs_reference = None
+            self.reason = REASON_NO_PRICES
             return 0
+        decision = decisions[index]
         self.current_price = costs[index][0].price
         self.heat_cost_now = costs[index][2].price if self.cop_now else None
-        self.position = price_position(day_costs, costs[index][2].price)
-        expensive, cheap = self._changes()
-        return offset_for_position(
-            self.position,
-            self.options[CONF_EXPENSIVE_THRESHOLD],
-            expensive,
-            self.options[CONF_CHEAP_THRESHOLD],
-            cheap,
-        )
+        self.position = decision.position
+        self.vs_reference = decision.vs_reference
+        self.reason = decision.reason
+        if self.daily:
+            self._store.async_delay_save(self._store_data, 600)
+        return decision.change
 
     def _refresh_target(self) -> None:
         """Compute the value for this quarter and the status, without sending it."""
@@ -466,31 +532,21 @@ class HeatShiftController:
 
     def plan(self) -> list[dict[str, Any]]:
         """Today's plan, for the sensor attributes and dashboard card."""
-        expensive, cheap = self._changes()
-        today = dt_util.now().date()
-        costs = [
-            item
-            for item in self._cost_slots(float(self.options[CONF_HEATING_LWT]))
-            if item[0].start.date() == today
-        ]
-        changes = offset_plan(
-            [item[2] for item in costs],
-            today,
-            self.options[CONF_EXPENSIVE_THRESHOLD],
-            expensive,
-            self.options[CONF_CHEAP_THRESHOLD],
-            cheap,
-        )
+        costs, decisions = self._decide_today()
         return [
             {
                 "start": slot.start.isoformat(),
                 "price": slot.price,
                 "cop": round(cop, 2) if cop else None,
                 "heat_cost": round(cost.price, 4),
-                "change": change,
-                "value": self._value_for(change),
+                "change": decision.change,
+                "value": self._value_for(decision.change),
+                "reason": decision.reason,
+                "vs_reference": round(decision.vs_reference, 3)
+                if decision.vs_reference is not None
+                else None,
             }
-            for (slot, cop, cost), (_, change) in zip(costs, changes)
+            for (slot, cop, cost), decision in zip(costs, decisions)
         ]
 
     def _plan_dhw(self) -> None:

@@ -229,3 +229,103 @@ def entity_fits_mode(mode: str, min_temp: float | None, max_temp: float | None) 
     if mode == "thermostat":
         return min_temp >= 0 and max_temp >= 18
     return False
+
+
+# Reasons for the change in a quarter, shown to the user.
+REASON_EXPENSIVE = "expensive"
+REASON_CHEAP = "cheap"
+REASON_PEAK_NOT_EXPENSIVE = "peak_not_expensive"
+REASON_DIP_NOT_CHEAP = "dip_not_cheap"
+REASON_SMALL_SPREAD = "small_spread"
+REASON_NORMAL = "normal"
+REASON_NO_PRICES = "no_prices"
+REASONS = [
+    REASON_EXPENSIVE,
+    REASON_CHEAP,
+    REASON_PEAK_NOT_EXPENSIVE,
+    REASON_DIP_NOT_CHEAP,
+    REASON_SMALL_SPREAD,
+    REASON_NORMAL,
+    REASON_NO_PRICES,
+]
+
+
+@dataclass(frozen=True)
+class Decision:
+    """The change for one quarter and why."""
+
+    change: float
+    reason: str
+    vs_reference: float | None  # 0.2 means 20% above the reference
+    position: float | None
+
+
+def day_spread(day_costs: list[float]) -> float:
+    """Difference between the most and least expensive moment, relative to the average."""
+    if not day_costs:
+        return 0.0
+    average = sum(day_costs) / len(day_costs)
+    if average <= 0:
+        return 0.0
+    return (max(day_costs) - min(day_costs)) / average
+
+
+def decide(
+    cost: float,
+    day_costs: list[float],
+    reference: float | None,
+    expensive_threshold: float,
+    expensive_offset: float,
+    cheap_threshold: float,
+    cheap_offset: float,
+    margin: float,
+    min_spread: float,
+) -> Decision:
+    """Pick the change for one quarter, with the reason.
+
+    A quarter is only shifted when three things agree:
+    - the day has enough difference between cheap and expensive (min_spread %),
+    - the quarter is among the most (or least) expensive of the day,
+    - the quarter is clearly above (or below) the user's normal price,
+      the reference, by at least `margin` %.
+    """
+    if not day_costs:
+        return Decision(0, REASON_NO_PRICES, None, None)
+    low, high = min(day_costs), max(day_costs)
+    position = (cost - low) / (high - low) if high > low else None
+    vs_reference = cost / reference - 1 if reference and reference > 0 else None
+
+    if day_spread(day_costs) < min_spread / 100:
+        return Decision(0, REASON_SMALL_SPREAD, vs_reference, position)
+
+    if position is not None and position >= expensive_threshold / 100:
+        if vs_reference is None or vs_reference >= margin / 100:
+            return Decision(expensive_offset, REASON_EXPENSIVE, vs_reference, position)
+        return Decision(0, REASON_PEAK_NOT_EXPENSIVE, vs_reference, position)
+
+    if (
+        cheap_offset
+        and cheap_threshold > 0
+        and position is not None
+        and position <= cheap_threshold / 100
+    ):
+        if vs_reference is None or vs_reference <= -margin / 100:
+            return Decision(cheap_offset, REASON_CHEAP, vs_reference, position)
+        return Decision(0, REASON_DIP_NOT_CHEAP, vs_reference, position)
+
+    return Decision(0, REASON_NORMAL, vs_reference, position)
+
+
+def reference_from_history(daily: dict[str, float], today: date, days: int) -> float | None:
+    """Average daily heat cost over the last `days` days before today.
+
+    Needs at least three days of history; otherwise returns None.
+    """
+    past = sorted(
+        (key, value)
+        for key, value in daily.items()
+        if key < today.isoformat() and value and value > 0
+    )[-days:]
+    if len(past) < 3:
+        return None
+    return sum(value for _, value in past) / len(past)

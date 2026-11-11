@@ -56,13 +56,21 @@
           "thermostat_expensive_delta": "Verandering bij dure prijs",
           "thermostat_cheap_delta": "Verandering bij goedkope prijs",
           "thermostat_min": "Laagste kamersetpoint",
-          "thermostat_max": "Hoogste kamersetpoint"
+          "thermostat_max": "Hoogste kamersetpoint",
+          "reference_margin": "Verschil met normaal voor verschuiven",
+          "min_spread": "Minimaal prijsverschil binnen de dag",
+          "reference_days": "Dagen voor de normale prijs",
+          "start_price": "Startwaarde normale stroomprijs"
         },
         "data_description": {
           "expensive_threshold": "0% is de goedkoopste prijs van de dag, 100% de duurste. Daarboven geldt de offset bij dure prijs.",
           "cheap_threshold": "Daaronder geldt de offset bij goedkope prijs. 0 zet dit uit.",
           "tank_minimum": "Onder deze temperatuur warmt HeatShift de boiler altijd op, ongeacht de prijs.",
-          "base_temperature": "Het setpoint zonder prijssturing. HeatShift zet de thermostaat hierop terug bij uitzetten."
+          "base_temperature": "Het setpoint zonder prijssturing. HeatShift zet de thermostaat hierop terug bij uitzetten.",
+          "reference_margin": "Alleen verlagen als warmte minstens zoveel duurder is dan normaal, alleen verhogen als minstens zoveel goedkoper.",
+          "min_spread": "Onder dit verschil tussen het goedkoopste en duurste moment van de dag schuift HeatShift niet.",
+          "reference_days": "Normaal is de gemiddelde warmteprijs over zoveel voorgaande dagen.",
+          "start_price": "Gebruikt tot er drie dagen geschiedenis is. Standaard: CBS-gemiddelde voor dynamische contracten, september 2026."
         }
       },
       "cop": {
@@ -129,6 +137,18 @@
       },
       "heat_cost_now": {
         "name": "Warmtekosten nu"
+      },
+      "reason": {
+        "name": "Reden",
+        "state": {
+          "expensive": "Duur moment: minder stoken",
+          "cheap": "Goedkoop moment: meer stoken",
+          "peak_not_expensive": "Duur deel van de dag, maar niet duurder dan normaal",
+          "dip_not_cheap": "Goedkoop deel van de dag, maar niet goedkoper dan normaal",
+          "small_spread": "Weinig prijsverschil vandaag",
+          "normal": "Normale prijs",
+          "no_prices": "Geen prijzen"
+        }
       }
     }
   },

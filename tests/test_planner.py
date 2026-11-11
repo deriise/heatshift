@@ -148,3 +148,65 @@ def test_entity_fits_mode() -> None:
     assert entity_fits_mode("thermostat", 5, 30)
     assert not entity_fits_mode("offset", 5, 30)
     assert not entity_fits_mode("offset", None, 10)
+
+
+from planner import (  # noqa: E402
+    REASON_CHEAP,
+    REASON_DIP_NOT_CHEAP,
+    REASON_EXPENSIVE,
+    REASON_NORMAL,
+    REASON_PEAK_NOT_EXPENSIVE,
+    REASON_SMALL_SPREAD,
+    decide,
+    reference_from_history,
+)
+
+COSTS = [0.08, 0.09, 0.10, 0.12, 0.14]
+
+
+def _d(cost, reference, day=COSTS, cheap_offset=1):
+    return decide(cost, day, reference, 65, -2, 15, cheap_offset, 20, 20)
+
+
+def test_expensive_peak_above_normal_is_lowered() -> None:
+    d = _d(0.14, 0.10)
+    assert d.change == -2 and d.reason == REASON_EXPENSIVE
+    assert abs(d.vs_reference - 0.4) < 1e-9
+
+
+def test_peak_that_is_still_cheap_is_not_lowered() -> None:
+    # Whole day cheap: the peak of the day is below the normal price.
+    d = _d(0.14, 0.20)
+    assert d.change == 0 and d.reason == REASON_PEAK_NOT_EXPENSIVE
+
+
+def test_small_spread_does_nothing() -> None:
+    d = _d(0.302, 0.20, day=[0.30, 0.301, 0.302])
+    assert d.change == 0 and d.reason == REASON_SMALL_SPREAD
+
+
+def test_cheap_dip_below_normal_is_raised() -> None:
+    d = _d(0.08, 0.12)
+    assert d.change == 1 and d.reason == REASON_CHEAP
+
+
+def test_dip_above_normal_is_not_raised() -> None:
+    d = _d(0.08, 0.07)
+    assert d.change == 0 and d.reason == REASON_DIP_NOT_CHEAP
+
+
+def test_dip_without_cheap_offset_is_normal() -> None:
+    d = _d(0.08, 0.12, cheap_offset=0)
+    assert d.change == 0 and d.reason == REASON_NORMAL
+
+
+def test_reference_needs_three_days() -> None:
+    today = date(2026, 11, 11)
+    daily = {"2026-11-09": 0.1, "2026-11-10": 0.2}
+    assert reference_from_history(daily, today, 7) is None
+    daily["2026-11-08"] = 0.3
+    daily["2026-11-11"] = 9.9  # today is ignored
+    assert abs(reference_from_history(daily, today, 7) - 0.2) < 1e-9
+    assert reference_from_history(daily, today, 2) is None
+    daily["2026-11-07"] = 0.4
+    assert abs(reference_from_history(daily, today, 3) - 0.2) < 1e-9
