@@ -172,7 +172,7 @@ class HeatShiftOptionsFlow(OptionsFlow):
                 errors["base"] = "base_outside_limits"
             else:
                 # Keep settings of the other mode, so switching back loses nothing.
-                self._data = {**self.config_entry.options, **user_input}
+                self._data = {**DEFAULT_OPTIONS, **self.config_entry.options, **user_input}
                 return await self.async_step_cop()
 
         fields: dict[Any, Any] = {
