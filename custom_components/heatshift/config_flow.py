@@ -79,15 +79,12 @@ from .planner import entity_fits_mode, parse_prices
 
 
 def _number(minimum: float, maximum: float, step: float = 1, unit: str | None = None) -> NumberSelector:
-    return NumberSelector(
-        NumberSelectorConfig(
-            min=minimum,
-            max=maximum,
-            step=step,
-            unit_of_measurement=unit,
-            mode=NumberSelectorMode.BOX,
-        )
+    config = NumberSelectorConfig(
+        min=minimum, max=maximum, step=step, mode=NumberSelectorMode.BOX
     )
+    if unit:
+        config["unit_of_measurement"] = unit
+    return NumberSelector(config)
 
 
 class HeatShiftConfigFlow(ConfigFlow, domain=DOMAIN):
