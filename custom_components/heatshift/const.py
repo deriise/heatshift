@@ -40,7 +40,24 @@ CONF_THERMO_CHEAP_DELTA: Final = "thermostat_cheap_delta"
 CONF_THERMO_MIN: Final = "thermostat_min"
 CONF_THERMO_MAX: Final = "thermostat_max"
 
-DEFAULT_OPTIONS: Final = {
+# COP
+CONF_WEATHER_ENTITY: Final = "weather_entity"
+CONF_OUTDOOR_SENSOR: Final = "outdoor_sensor"
+CONF_HEATING_LWT: Final = "heating_lwt"
+CONF_DHW_LWT: Final = "dhw_lwt"
+CONF_COP_A7: Final = "cop_a7w35"
+CONF_COP_A2: Final = "cop_a2w35"
+CONF_COP_SOURCE: Final = "cop_source"
+CONF_FLOW_SENSOR: Final = "flow_sensor"
+CONF_SUPPLY_SENSOR: Final = "supply_sensor"
+CONF_RETURN_SENSOR: Final = "return_sensor"
+CONF_POWER_SENSOR: Final = "power_sensor"
+
+COP_ESTIMATE: Final = "estimate"
+COP_MEASURED: Final = "measured"
+COP_SOURCES: Final = [COP_ESTIMATE, COP_MEASURED]
+
+DEFAULT_OPTIONS: Final[dict] = {
     CONF_EXPENSIVE_THRESHOLD: 65,
     CONF_EXPENSIVE_OFFSET: -2,
     CONF_CHEAP_THRESHOLD: 15,
@@ -61,6 +78,11 @@ DEFAULT_OPTIONS: Final = {
     CONF_THERMO_CHEAP_DELTA: 0.5,
     CONF_THERMO_MIN: 17.0,
     CONF_THERMO_MAX: 23.0,
+    CONF_HEATING_LWT: 35,
+    CONF_DHW_LWT: 55,
+    CONF_COP_A7: 0,
+    CONF_COP_A2: 0,
+    CONF_COP_SOURCE: COP_ESTIMATE,
 }
 
 # Hard safety limits, also used as selector bounds.

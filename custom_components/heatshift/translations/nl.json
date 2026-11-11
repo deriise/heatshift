@@ -64,10 +64,39 @@
           "tank_minimum": "Onder deze temperatuur warmt HeatShift de boiler altijd op, ongeacht de prijs.",
           "base_temperature": "Het setpoint zonder prijssturing. HeatShift zet de thermostaat hierop terug bij uitzetten."
         }
+      },
+      "cop": {
+        "title": "Weer en COP",
+        "description": "HeatShift plant op warmtekosten: de prijs gedeeld door de COP. De COP hangt af van de buitentemperatuur, dus een warmer moment kan goedkoper zijn dan een lagere prijs.",
+        "data": {
+          "weather_entity": "Weersverwachting",
+          "outdoor_sensor": "Sensor buitentemperatuur",
+          "heating_lwt": "Aanvoertemperatuur verwarming",
+          "dhw_lwt": "Aanvoertemperatuur warm water",
+          "cop_a7w35": "COP uit datablad bij A7/W35",
+          "cop_a2w35": "COP uit datablad bij A2/W35",
+          "cop_source": "Bron voor de COP",
+          "flow_sensor": "Flowsensor",
+          "supply_sensor": "Sensor aanvoertemperatuur",
+          "return_sensor": "Sensor retourtemperatuur",
+          "power_sensor": "Sensor elektrisch vermogen"
+        },
+        "data_description": {
+          "weather_entity": "Verwachting per uur voor de buitentemperatuur per kwartier. Zonder verwachting plant HeatShift alleen op prijs.",
+          "outdoor_sensor": "Optioneel. Voor het huidige moment en voor het meten.",
+          "heating_lwt": "Gebruikelijke aanvoertemperatuur voor verwarming op een koude dag.",
+          "cop_a7w35": "Uit het datablad van de warmtepomp. Laat beide op 0 voor een natuurkundige schatting.",
+          "cop_a2w35": "Inclusief ontdooiverlies. Vul beide in of geen van beide.",
+          "cop_source": "Gemeten: flow, aanvoer- en retourtemperatuur en vermogen, bijvoorbeeld van ESPAltherma. HeatShift leert een correctie per graad buitentemperatuur.",
+          "flow_sensor": "In l/min, l/h of m³/h."
+        }
       }
     },
     "error": {
-      "base_outside_limits": "De basistemperatuur moet tussen de onder- en bovengrens liggen."
+      "base_outside_limits": "De basistemperatuur moet tussen de onder- en bovengrens liggen.",
+      "datasheet_both": "Vul beide waarden uit het datablad in, of laat beide op 0.",
+      "measured_sensors_missing": "Voor meten zijn sensoren voor flow, aanvoer, retour en vermogen nodig.",
+      "outdoor_missing": "Voor meten is een sensor voor buitentemperatuur of een weersverwachting nodig."
     }
   },
   "entity": {
@@ -94,6 +123,12 @@
       },
       "planned_setpoint": {
         "name": "Gepland setpoint"
+      },
+      "cop_now": {
+        "name": "COP nu"
+      },
+      "heat_cost_now": {
+        "name": "Warmtekosten nu"
       }
     }
   },
@@ -102,6 +137,12 @@
       "options": {
         "offset": "Offset op aanvoertemperatuur",
         "thermostat": "Kamerthermostaat"
+      }
+    },
+    "cop_source": {
+      "options": {
+        "estimate": "Schatten",
+        "measured": "Meten (flow en temperaturen)"
       }
     }
   }

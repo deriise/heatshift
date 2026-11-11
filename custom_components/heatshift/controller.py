@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from typing import Any
 
@@ -13,13 +13,28 @@ from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, Home
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import (
     async_call_later,
+    async_track_time_interval,
     async_track_point_in_time,
     async_track_state_change_event,
     async_track_time_change,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_COP_A2,
+    CONF_COP_A7,
+    CONF_COP_SOURCE,
+    CONF_DHW_LWT,
+    CONF_FLOW_SENSOR,
+    CONF_HEATING_LWT,
+    CONF_OUTDOOR_SENSOR,
+    CONF_POWER_SENSOR,
+    CONF_RETURN_SENSOR,
+    CONF_SUPPLY_SENSOR,
+    CONF_WEATHER_ENTITY,
+    COP_MEASURED,
+    DOMAIN,
     CONF_BASE_TEMP,
     CONF_CONTROL_MODE,
     CONF_THERMO_CHEAP_DELTA,
@@ -57,22 +72,23 @@ from .const import (
     STATUS_NO_PRICES,
     STATUS_OFF,
 )
+from .copmodel import CopModel, LearnedCorrection, heat_kw
 from .planner import (
     Block,
     PriceSlot,
     cheapest_block,
-    current_slot,
     offset_for_position,
     offset_plan,
     parse_prices,
     price_position,
-    slots_for_day,
     thermostat_setpoint,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 HEATING_MODE = "heat"
+STORE_VERSION = 1
+SAMPLE_INTERVAL = timedelta(minutes=1)
 # HVAC modes in which a room thermostat may be shifted.
 THERMOSTAT_MODES = ("heat", "heat_cool", "auto")
 
@@ -111,6 +127,21 @@ class HeatShiftController:
         self._morning_restore_setpoint: float | None = None
         self._boost_by_us = False
 
+        # COP
+        self.cop_model = CopModel(
+            cop_a7=float(self.options[CONF_COP_A7]) or None,
+            cop_a2=float(self.options[CONF_COP_A2]) or None,
+        )
+        self.learned = LearnedCorrection()
+        self.measuring: bool = self.options[CONF_COP_SOURCE] == COP_MEASURED
+        self.forecast: list[tuple[datetime, float, float | None]] = []
+        self.cop_now: float | None = None
+        self.heat_cost_now: float | None = None
+        self.live_cop: float | None = None
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}.cop"
+        )
+
     # ----- entity updates -------------------------------------------------
 
     @callback
@@ -128,6 +159,15 @@ class HeatShiftController:
 
     async def async_start(self) -> None:
         """Subscribe to time and state events."""
+        self.learned = LearnedCorrection.from_dict(await self._store.async_load())
+        await self._async_update_forecast()
+        self._listeners.append(
+            async_track_time_change(self.hass, self._handle_hourly, minute=2, second=0)
+        )
+        if self.measuring:
+            self._listeners.append(
+                async_track_time_interval(self.hass, self._handle_sample, SAMPLE_INTERVAL)
+            )
         self._listeners.append(
             async_track_time_change(
                 self.hass, self._handle_quarter, minute=[0, 15, 30, 45], second=30
@@ -166,6 +206,8 @@ class HeatShiftController:
         if self._dhw_unsub:
             self._dhw_unsub()
             self._dhw_unsub = None
+        if self.measuring:
+            await self._store.async_save(self.learned.to_dict())
         if self.enabled:
             await self._async_release()
 
@@ -201,6 +243,154 @@ class HeatShiftController:
 
     async def _handle_morning(self, now: datetime) -> None:
         await self._async_morning_check()
+
+    async def _handle_hourly(self, now: datetime) -> None:
+        await self._async_update_forecast()
+        self._plan_dhw()
+        self._refresh_target()
+        self._notify()
+
+    async def _handle_sample(self, now: datetime) -> None:
+        self._sample_cop()
+
+    # ----- weather and COP -------------------------------------------------
+
+    async def _async_update_forecast(self) -> None:
+        """Fetch the hourly weather forecast for the COP per quarter."""
+        weather = self.options.get(CONF_WEATHER_ENTITY)
+        if not weather:
+            self.forecast = []
+            return
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {ATTR_ENTITY_ID: weather, "type": "hourly"},
+                blocking=True,
+                return_response=True,
+            )
+        except (HomeAssistantError, ValueError) as err:
+            _LOGGER.warning("HeatShift could not read the weather forecast: %s", err)
+            return
+        items = ((response or {}).get(weather) or {}).get("forecast") or []
+        forecast: list[tuple[datetime, float, float | None]] = []
+        for item in items:
+            when = dt_util.parse_datetime(str(item.get("datetime", "")))
+            temperature = item.get("temperature")
+            if when is None or temperature is None:
+                continue
+            humidity = item.get("humidity")
+            forecast.append(
+                (
+                    dt_util.as_local(when),
+                    float(temperature),
+                    float(humidity) if humidity is not None else None,
+                )
+            )
+        self.forecast = sorted(forecast)
+
+    def _float_state(self, entity_id: str | None) -> float | None:
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        try:
+            return float(state.state) if state else None
+        except (TypeError, ValueError):
+            return None
+
+    def _current_weather(self) -> tuple[float | None, float | None]:
+        """Outdoor temperature and humidity right now."""
+        temperature = self._float_state(self.options.get(CONF_OUTDOOR_SENSOR))
+        humidity = None
+        weather = self.options.get(CONF_WEATHER_ENTITY)
+        state = self.hass.states.get(weather) if weather else None
+        if state:
+            if temperature is None:
+                try:
+                    temperature = float(state.attributes.get("temperature"))
+                except (TypeError, ValueError):
+                    temperature = None
+            try:
+                humidity = float(state.attributes.get("humidity"))
+            except (TypeError, ValueError):
+                humidity = None
+        return temperature, humidity
+
+    def _weather_at(self, when: datetime) -> tuple[float | None, float | None]:
+        """Forecast temperature and humidity for a moment."""
+        best: tuple[datetime, float, float | None] | None = None
+        for item in self.forecast:
+            if item[0] <= when < item[0] + timedelta(hours=1):
+                best = item
+                break
+        if best is not None:
+            return best[1], best[2]
+        if abs((when - dt_util.now()).total_seconds()) <= 3600:
+            return self._current_weather()
+        return None, None
+
+    def _cop_at(self, when: datetime, lwt: float) -> float | None:
+        outdoor, humidity = self._weather_at(when)
+        if outdoor is None:
+            return None
+        if self.measuring:
+            return self.learned.cop(self.cop_model, outdoor, lwt, humidity)
+        return self.cop_model.estimate(outdoor, lwt, humidity)
+
+    def _cost_slots(self, lwt: float) -> list[tuple[PriceSlot, float | None, PriceSlot]]:
+        """Per slot: the price slot, its COP, and a slot with the heat cost as price.
+
+        Without a COP for a slot the average COP of the other slots is used.
+        Without any COP the heat cost equals the price, so planning falls back
+        to planning on price.
+        """
+        cops = [self._cop_at(slot.start, lwt) for slot in self.slots]
+        known = [cop for cop in cops if cop]
+        fill = sum(known) / len(known) if known else 1.0
+        result = []
+        for slot, cop in zip(self.slots, cops):
+            used = cop or fill
+            result.append(
+                (slot, cop, PriceSlot(start=slot.start, end=slot.end, price=slot.price / used))
+            )
+        return result
+
+    def _sample_cop(self) -> None:
+        """Add one minute of measurements to the learned COP curve."""
+        outdoor, humidity = self._current_weather()
+        flow = self._flow_l_per_min()
+        supply = self._float_state(self.options.get(CONF_SUPPLY_SENSOR))
+        return_ = self._float_state(self.options.get(CONF_RETURN_SENSOR))
+        power = self._power_kw()
+        if None in (outdoor, flow, supply, return_, power):
+            self.live_cop = None
+            return
+        heat = heat_kw(flow, supply, return_)
+        self.live_cop = round(heat / power, 2) if power > 0.2 and heat > 0 else None
+        if self.learned.add_sample(
+            self.cop_model, outdoor, humidity, supply, return_, flow, power, 1 / 60
+        ):
+            self._store.async_delay_save(self.learned.to_dict, 600)
+
+    def _flow_l_per_min(self) -> float | None:
+        entity_id = self.options.get(CONF_FLOW_SENSOR)
+        value = self._float_state(entity_id)
+        if value is None:
+            return None
+        unit = (self.hass.states.get(entity_id).attributes.get("unit_of_measurement") or "").lower()
+        if unit in ("l/h", "lph"):
+            return value / 60
+        if unit in ("m³/h", "m3/h"):
+            return value * 1000 / 60
+        return value
+
+    def _power_kw(self) -> float | None:
+        entity_id = self.options.get(CONF_POWER_SENSOR)
+        value = self._float_state(entity_id)
+        if value is None:
+            return None
+        unit = (self.hass.states.get(entity_id).attributes.get("unit_of_measurement") or "").lower()
+        return value if unit == "kw" else value / 1000
 
     # ----- planning --------------------------------------------------------
 
@@ -239,14 +429,21 @@ class HeatShiftController:
 
     def _compute_target(self) -> float:
         now = dt_util.now()
-        day_slots = slots_for_day(self.slots, now.date())
-        slot = current_slot(day_slots, now)
-        if slot is None:
+        lwt = float(self.options[CONF_HEATING_LWT])
+        self.cop_now = self._cop_at(now, lwt)
+        costs = [item for item in self._cost_slots(lwt) if item[0].start.date() == now.date()]
+        day_costs = [item[2] for item in costs]
+        index = next(
+            (i for i, item in enumerate(costs) if item[0].start <= now < item[0].end), None
+        )
+        if index is None:
             self.current_price = None
+            self.heat_cost_now = None
             self.position = None
             return 0
-        self.current_price = slot.price
-        self.position = price_position(day_slots, slot.price)
+        self.current_price = costs[index][0].price
+        self.heat_cost_now = costs[index][2].price if self.cop_now else None
+        self.position = price_position(day_costs, costs[index][2].price)
         expensive, cheap = self._changes()
         return offset_for_position(
             self.position,
@@ -270,21 +467,30 @@ class HeatShiftController:
     def plan(self) -> list[dict[str, Any]]:
         """Today's plan, for the sensor attributes and dashboard card."""
         expensive, cheap = self._changes()
+        today = dt_util.now().date()
+        costs = [
+            item
+            for item in self._cost_slots(float(self.options[CONF_HEATING_LWT]))
+            if item[0].start.date() == today
+        ]
+        changes = offset_plan(
+            [item[2] for item in costs],
+            today,
+            self.options[CONF_EXPENSIVE_THRESHOLD],
+            expensive,
+            self.options[CONF_CHEAP_THRESHOLD],
+            cheap,
+        )
         return [
             {
                 "start": slot.start.isoformat(),
                 "price": slot.price,
+                "cop": round(cop, 2) if cop else None,
+                "heat_cost": round(cost.price, 4),
                 "change": change,
                 "value": self._value_for(change),
             }
-            for slot, change in offset_plan(
-                self.slots,
-                dt_util.now().date(),
-                self.options[CONF_EXPENSIVE_THRESHOLD],
-                expensive,
-                self.options[CONF_CHEAP_THRESHOLD],
-                cheap,
-            )
+            for (slot, cop, cost), (_, change) in zip(costs, changes)
         ]
 
     def _plan_dhw(self) -> None:
@@ -294,8 +500,9 @@ class HeatShiftController:
         self.dhw_block = None
         if not self.water_heater or not self.options[CONF_DHW_ENABLED]:
             return
+        dhw_costs = [item[2] for item in self._cost_slots(float(self.options[CONF_DHW_LWT]))]
         self.dhw_block = cheapest_block(
-            self.slots,
+            dhw_costs,
             dt_util.now().date(),
             _parse_time(self.options[CONF_DHW_WINDOW_START], DEFAULT_OPTIONS[CONF_DHW_WINDOW_START]),
             _parse_time(self.options[CONF_DHW_WINDOW_END], DEFAULT_OPTIONS[CONF_DHW_WINDOW_END]),

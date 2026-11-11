@@ -64,10 +64,39 @@
           "tank_minimum": "Below this temperature HeatShift always heats the tank, whatever the price.",
           "base_temperature": "The setpoint without price steering. HeatShift returns to this when it is switched off."
         }
+      },
+      "cop": {
+        "title": "Weather and COP",
+        "description": "HeatShift plans on heat cost: price divided by the COP. The COP depends on the outdoor temperature, so a warmer moment can be cheaper than a lower price.",
+        "data": {
+          "weather_entity": "Weather forecast",
+          "outdoor_sensor": "Outdoor temperature sensor",
+          "heating_lwt": "Leaving water temperature heating",
+          "dhw_lwt": "Leaving water temperature hot water",
+          "cop_a7w35": "Datasheet COP at A7/W35",
+          "cop_a2w35": "Datasheet COP at A2/W35",
+          "cop_source": "COP source",
+          "flow_sensor": "Flow sensor",
+          "supply_sensor": "Supply temperature sensor",
+          "return_sensor": "Return temperature sensor",
+          "power_sensor": "Electrical power sensor"
+        },
+        "data_description": {
+          "weather_entity": "Hourly forecast for the outdoor temperature per quarter. Without it HeatShift plans on price only.",
+          "outdoor_sensor": "Optional. Used for the current moment and for measuring.",
+          "heating_lwt": "Typical leaving water temperature for heating on a cold day.",
+          "cop_a7w35": "From the datasheet of the heat pump. Leave both at 0 to use a physics estimate.",
+          "cop_a2w35": "Includes defrost losses. Fill in both or neither.",
+          "cop_source": "Measured: flow, supply and return temperature and power, for example from ESPAltherma. HeatShift learns a correction per degree outdoor temperature.",
+          "flow_sensor": "In l/min, l/h or m³/h."
+        }
       }
     },
     "error": {
-      "base_outside_limits": "The base temperature must lie between the lower and upper limit."
+      "base_outside_limits": "The base temperature must lie between the lower and upper limit.",
+      "datasheet_both": "Fill in both datasheet values, or leave both at 0.",
+      "measured_sensors_missing": "Measuring needs flow, supply, return and power sensors.",
+      "outdoor_missing": "Measuring needs an outdoor temperature sensor or a weather forecast."
     }
   },
   "entity": {
@@ -94,6 +123,12 @@
       },
       "planned_setpoint": {
         "name": "Planned setpoint"
+      },
+      "cop_now": {
+        "name": "COP now"
+      },
+      "heat_cost_now": {
+        "name": "Heat cost now"
       }
     }
   },
@@ -102,6 +137,12 @@
       "options": {
         "offset": "Offset on leaving water temperature",
         "thermostat": "Room thermostat"
+      }
+    },
+    "cop_source": {
+      "options": {
+        "estimate": "Estimate",
+        "measured": "Measured (flow and temperatures)"
       }
     }
   }

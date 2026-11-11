@@ -22,6 +22,19 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_COP_A2,
+    CONF_COP_A7,
+    CONF_COP_SOURCE,
+    CONF_DHW_LWT,
+    CONF_FLOW_SENSOR,
+    CONF_HEATING_LWT,
+    CONF_OUTDOOR_SENSOR,
+    CONF_POWER_SENSOR,
+    CONF_RETURN_SENSOR,
+    CONF_SUPPLY_SENSOR,
+    CONF_WEATHER_ENTITY,
+    COP_MEASURED,
+    COP_SOURCES,
     CONF_ACCEPT,
     CONF_BASE_TEMP,
     CONF_CONTROL_MODE,
@@ -147,7 +160,9 @@ class HeatShiftConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HeatShiftOptionsFlow(OptionsFlow):
-    """Settings: price thresholds, hot water and safety limits."""
+    """Settings: price thresholds, hot water, safety limits, then COP."""
+
+    _data: dict[str, Any]
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the settings screen."""
@@ -160,7 +175,8 @@ class HeatShiftOptionsFlow(OptionsFlow):
                 errors["base"] = "base_outside_limits"
             else:
                 # Keep settings of the other mode, so switching back loses nothing.
-                return self.async_create_entry(data={**self.config_entry.options, **user_input})
+                self._data = {**self.config_entry.options, **user_input}
+                return await self.async_step_cop()
 
         fields: dict[Any, Any] = {
             vol.Required(CONF_EXPENSIVE_THRESHOLD): _number(50, 100, 5, "%"),
@@ -205,3 +221,69 @@ class HeatShiftOptionsFlow(OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(schema, user_input or current),
             errors=errors,
         )
+
+    async def async_step_cop(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Second settings screen: weather and COP."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            measured = user_input.get(CONF_COP_SOURCE) == COP_MEASURED
+            a7 = user_input.get(CONF_COP_A7) or 0
+            a2 = user_input.get(CONF_COP_A2) or 0
+            if bool(a7) != bool(a2):
+                errors["base"] = "datasheet_both"
+            elif measured and not all(user_input.get(key) for key in MEASURE_SENSORS):
+                errors["base"] = "measured_sensors_missing"
+            elif measured and not (
+                user_input.get(CONF_OUTDOOR_SENSOR) or user_input.get(CONF_WEATHER_ENTITY)
+            ):
+                errors["base"] = "outdoor_missing"
+            else:
+                # Optional entities left empty must be removed, not kept from before.
+                data = {
+                    key: value for key, value in self._data.items() if key not in OPTIONAL_COP_ENTITIES
+                }
+                return self.async_create_entry(data={**data, **user_input})
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_WEATHER_ENTITY): EntitySelector(
+                    EntitySelectorConfig(domain="weather")
+                ),
+                vol.Optional(CONF_OUTDOOR_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor", device_class="temperature")
+                ),
+                vol.Required(CONF_HEATING_LWT): _number(25, 55, 1, "°C"),
+                vol.Required(CONF_DHW_LWT): _number(40, 65, 1, "°C"),
+                vol.Required(CONF_COP_A7): _number(0, 8, 0.05),
+                vol.Required(CONF_COP_A2): _number(0, 8, 0.05),
+                vol.Required(CONF_COP_SOURCE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=COP_SOURCES,
+                        mode=SelectSelectorMode.LIST,
+                        translation_key=CONF_COP_SOURCE,
+                    )
+                ),
+                vol.Optional(CONF_FLOW_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_SUPPLY_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor", device_class="temperature")
+                ),
+                vol.Optional(CONF_RETURN_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor", device_class="temperature")
+                ),
+                vol.Optional(CONF_POWER_SENSOR): EntitySelector(
+                    EntitySelectorConfig(domain="sensor", device_class="power")
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="cop",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input or self._data),
+            errors=errors,
+        )
+
+
+MEASURE_SENSORS = (CONF_FLOW_SENSOR, CONF_SUPPLY_SENSOR, CONF_RETURN_SENSOR, CONF_POWER_SENSOR)
+OPTIONAL_COP_ENTITIES = (CONF_WEATHER_ENTITY, CONF_OUTDOOR_SENSOR, *MEASURE_SENSORS)
+

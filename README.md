@@ -20,6 +20,7 @@ Home Assistant integration that shifts your heat pump to the cheapest hours of y
   - **Room thermostat:** it shifts the room setpoint from a base temperature (default -1 °C when expensive, +0.5 °C when cheap), always between a lower and upper limit.
 - **Hot water:** every night it finds the cheapest block (default 1 hour between 10:00 and 16:00) and heats the tank in that block if it is below a threshold.
 - **Morning check:** at a set time (default 05:00) it heats the tank if it is too cold for the morning showers, then sets everything back.
+- **Heat cost, not price:** HeatShift plans on what a kWh of heat costs: price divided by the COP. The COP depends on the outdoor temperature from the weather forecast, so a warmer afternoon can beat a cheaper night. The COP is estimated (from two datasheet points, or physics) or measured from flow, supply and return temperature and power, for example via ESPAltherma. With measurements HeatShift learns a correction per degree outdoor temperature.
 - **Safety:** fixed limits on the offset, a minimum tank temperature below which it always heats, and when steering is off, stopped or without prices the offset goes back to 0.
 
 ## Supported
@@ -48,6 +49,8 @@ If you already steer the heat pump with automations, turn those off before you t
 | Status | Off, active, no prices or heating off |
 | Planned offset or Planned setpoint (Geplande offset / Gepland setpoint) | Value for this quarter. Attribute `plan` holds today's plan. |
 | Hot water start (Start warm water) | Start of today's cheapest hot water block |
+| COP now (COP nu) | COP used for planning right now, with source and measured values |
+| Heat cost now (Warmtekosten nu) | Price divided by COP, in EUR per kWh of heat |
 
 ---
 
@@ -64,6 +67,7 @@ HeatShift laat je warmtepomp draaien op de goedkoopste uren van je dynamische en
   - **Kamerthermostaat:** het kamersetpoint verschuift vanaf een basistemperatuur (standaard -1 °C bij dure en +0,5 °C bij goedkope prijs), altijd tussen een onder- en bovengrens.
 - **Warm water:** elke nacht zoekt HeatShift het goedkoopste blok (standaard 1 uur tussen 10:00 en 16:00) en warmt de boiler dan op als die onder een drempel zit.
 - **Ochtendcheck:** op een vast tijdstip (standaard 05:00) warmt HeatShift de boiler op als die te koud is voor het douchen, en zet daarna alles terug.
+- **Warmtekosten, niet de prijs:** HeatShift plant op wat een kWh warmte kost: de prijs gedeeld door de COP. De COP hangt af van de buitentemperatuur uit de weersverwachting, dus een warmere middag kan voordeliger zijn dan een goedkopere nacht. De COP wordt geschat (uit twee punten van het datablad, of natuurkundig) of gemeten met flow, aanvoer- en retourtemperatuur en vermogen, bijvoorbeeld via ESPAltherma. Met metingen leert HeatShift een correctie per graad buitentemperatuur.
 - **Veiligheid:** vaste grenzen voor de offset, een minimale boilertemperatuur waaronder altijd wordt opgewarmd, en bij uitzetten, stoppen of zonder prijzen gaat de offset terug naar 0.
 
 ### Installeren

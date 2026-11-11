@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -28,6 +28,8 @@ async def async_setup_entry(
             "planned_setpoint" if controller.mode == MODE_THERMOSTAT else "planned_offset",
         ),
     ]
+    entities.append(CopSensor(controller, "cop_now"))
+    entities.append(HeatCostSensor(controller, "heat_cost_now"))
     if controller.water_heater:
         entities.append(HotWaterStartSensor(controller, "hot_water_start"))
     async_add_entities(entities)
@@ -88,4 +90,52 @@ class HotWaterStartSensor(HeatShiftEntity, SensorEntity):
         block = self.controller.dhw_block
         if block is None:
             return {}
-        return {"end": block.end.isoformat(), "average_price": round(block.average, 5)}
+        return {"end": block.end.isoformat(), "average_heat_cost": round(block.average, 5)}
+
+
+class CopSensor(HeatShiftEntity, SensorEntity):
+    """COP used for planning right now (heating)."""
+
+    _attr_icon = "mdi:heat-pump-outline"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the COP for this moment."""
+        cop = self.controller.cop_now
+        return round(cop, 2) if cop else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the source and, when measuring, the live and learned values."""
+        controller = self.controller
+        attributes: dict[str, Any] = {
+            "source": "measured" if controller.measuring else "estimate",
+            "datasheet": controller.cop_model.has_datasheet,
+        }
+        if controller.measuring:
+            outdoor, _ = controller._current_weather()
+            attributes["live_cop"] = controller.live_cop
+            attributes["measured_cop_this_temperature"] = (
+                round(value, 2)
+                if outdoor is not None
+                and (value := controller.learned.measured_cop(outdoor)) is not None
+                else None
+            )
+            attributes["learned_bins"] = len(controller.learned.bins)
+        return attributes
+
+
+class HeatCostSensor(HeatShiftEntity, SensorEntity):
+    """What one kWh of heat costs right now: price divided by COP."""
+
+    _attr_icon = "mdi:cash-clock"
+    _attr_native_unit_of_measurement = "EUR/kWh"
+    _attr_suggested_display_precision = 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the heat cost."""
+        cost = self.controller.heat_cost_now
+        return round(cost, 4) if cost is not None else None
